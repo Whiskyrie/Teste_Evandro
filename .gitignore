@@ -1,6 +1,10 @@
 # Arquivos de Organização Pessoal
 *.md
 
+# Exceções - Documentação do projeto
+!DECISOES_TECNICAS.md
+!README.md
+
 # Compiled class files
 *.class
 
@@ -75,3 +79,5 @@ yarn-error.log*
 
 # Postman
 *.postman_collection.json.backup
+
+
