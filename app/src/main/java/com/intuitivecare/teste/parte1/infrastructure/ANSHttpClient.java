@@ -12,8 +12,6 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,46 +153,6 @@ public class ANSHttpClient {
         
         logger.info("Arquivo baixado com sucesso: {}", destino);
         return destino;
-    }
-    
-    private String buscarConteudoHtml(String url) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .timeout(REQUEST_TIMEOUT)
-            .GET()
-            .build();
-        
-        HttpResponse<String> response = httpClient.send(
-            request,
-            HttpResponse.BodyHandlers.ofString()
-        );
-        
-        if (response.statusCode() != 200) {
-            throw new IOException("Erro ao acessar URL. Status: " + response.statusCode());
-        }
-        
-        return response.body();
-    }
-    
-    private List<String> extrairLinksZip(String html, String baseUrl) {
-        List<String> links = new ArrayList<>();
-        
-        // Pattern para encontrar links de arquivos .zip
-        Pattern pattern = Pattern.compile("href=['\"]([^'\"]*\\.zip)['\"]", Pattern.CASE_INSENSITIVE);
-        Matcher matcher = pattern.matcher(html);
-        
-        while (matcher.find()) {
-            String link = matcher.group(1);
-            
-            // Se o link for relativo, transforma em absoluto
-            if (!link.startsWith("http")) {
-                link = baseUrl + link;
-            }
-            
-            links.add(link);
-        }
-        
-        return links;
     }
     
     private String extrairNomeArquivo(String url) {
