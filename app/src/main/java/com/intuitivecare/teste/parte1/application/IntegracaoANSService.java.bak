@@ -1,0 +1,187 @@
+package com.intuitivecare.teste.parte1.application;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.intuitivecare.teste.parte1.domain.DespesaOperadora;
+import com.intuitivecare.teste.parte1.domain.TrimestreANS;
+import com.intuitivecare.teste.parte1.infrastructure.ANSHttpClient;
+import com.intuitivecare.teste.parte1.infrastructure.CSVDespesasParser;
+import com.intuitivecare.teste.parte1.infrastructure.ZipFileHandler;
+
+/**
+ * Caso de uso: Integração com API da ANS.
+ * Orquestra o processo completo de download, extração e consolidação de dados.
+ */
+public class IntegracaoANSService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(IntegracaoANSService.class);
+    
+    private final ANSHttpClient httpClient;
+    private final ZipFileHandler zipHandler;
+    private final CSVDespesasParser csvParser;
+    private final Path diretorioTrabalho;
+    
+    public IntegracaoANSService(Path diretorioTrabalho) {
+        this.httpClient = new ANSHttpClient();
+        this.zipHandler = new ZipFileHandler();
+        this.csvParser = new CSVDespesasParser();
+        this.diretorioTrabalho = diretorioTrabalho;
+    }
+    
+    /**
+     * Executa integração completa: baixa, processa e consolida dados dos trimestres.
+     */
+    public void executarIntegracao(List<TrimestreANS> trimestres) throws IOException, InterruptedException {
+        logger.info("Iniciando integração ANS para {} trimestres", trimestres.size());
+        
+        List<DespesaOperadora> todasDespesas = new ArrayList<>();
+        
+        for (TrimestreANS trimestre : trimestres) {
+            logger.info("Processando trimestre: {}", trimestre);
+            
+            try {
+                List<DespesaOperadora> despesas = processarTrimestre(trimestre);
+                todasDespesas.addAll(despesas);
+                logger.info("Trimestre {} processado: {} despesas", trimestre, despesas.size());
+            } catch (IOException | InterruptedException e) {
+                logger.error("Erro ao processar trimestre {}: {}", trimestre, e.getMessage(), e);
+            }
+        }
+        
+        // Aplica validações de consistência
+        todasDespesas = aplicarValidacoesConsistencia(todasDespesas);
+        
+        // Exporta consolidado
+        Path csvConsolidado = diretorioTrabalho.resolve("consolidado_despesas.csv");
+        csvParser.exportarParaCSV(todasDespesas, csvConsolidado);
+        
+        // Compacta o CSV
+        Path zipConsolidado = diretorioTrabalho.resolve("consolidado_despesas.zip");
+        compactarArquivo(csvConsolidado, zipConsolidado);
+        
+        logger.info("Integração concluída! Total de {} despesas consolidadas", todasDespesas.size());
+        logger.info("Arquivo gerado: {}", zipConsolidado);
+    }
+    
+    private List<DespesaOperadora> processarTrimestre(TrimestreANS trimestre) 
+            throws IOException, InterruptedException {
+        
+        List<DespesaOperadora> despesas = new ArrayList<>();
+        
+        // 1. Listar arquivos ZIP disponíveis
+        List<String> urlsZip = httpClient.listarArquivosZip(trimestre.ano(), trimestre.trimestre());
+        
+        if (urlsZip.isEmpty()) {
+            logger.warn("Nenhum arquivo ZIP encontrado para trimestre: {}", trimestre);
+            return despesas;
+        }
+        
+        // 2. Baixar cada arquivo ZIP
+        Path dirDownload = diretorioTrabalho.resolve("downloads").resolve(trimestre.toDisplayFormat());
+        Files.createDirectories(dirDownload);
+        
+        for (String urlZip : urlsZip) {
+            try {
+                // Baixa ZIP
+                Path arquivoZip = httpClient.baixarArquivo(urlZip, dirDownload);
+                
+                // Extrai ZIP
+                Path dirExtracao = diretorioTrabalho.resolve("extraidos").resolve(trimestre.toDisplayFormat());
+                List<Path> arquivosExtraidos = zipHandler.extrairZip(arquivoZip, dirExtracao);
+                
+                // Filtra apenas arquivos de despesas
+                List<Path> arquivosDespesas = zipHandler.filtrarArquivosDespesas(arquivosExtraidos);
+                
+                // Processa cada arquivo CSV
+                for (Path arquivoCsv : arquivosDespesas) {
+                    if (isArquivoProcessavel(arquivoCsv)) {
+                        List<DespesaOperadora> despesasArquivo = csvParser.processarArquivo(
+                            arquivoCsv, 
+                            trimestre.ano(), 
+                            trimestre.trimestre()
+                        );
+                        despesas.addAll(despesasArquivo);
+                    }
+                }
+                
+            } catch (IOException | InterruptedException e) {
+                logger.error("Erro ao processar arquivo ZIP {}: {}", urlZip, e.getMessage());
+            }
+        }
+        
+        return despesas;
+    }
+    
+    /**
+     * Aplica validações de consistência conforme decisões técnicas:
+     * - Marca CNPJs duplicados com razões sociais diferentes
+     */
+    private List<DespesaOperadora> aplicarValidacoesConsistencia(List<DespesaOperadora> despesas) {
+        logger.info("Aplicando validações de consistência em {} despesas", despesas.size());
+        
+        // Agrupa por CNPJ para detectar divergências
+        Map<String, List<DespesaOperadora>> porCnpj = despesas.stream()
+            .collect(Collectors.groupingBy(DespesaOperadora::cnpj));
+        
+        List<DespesaOperadora> despesasValidadas = new ArrayList<>();
+        int duplicatasEncontradas = 0;
+        
+        for (Map.Entry<String, List<DespesaOperadora>> entry : porCnpj.entrySet()) {
+            String cnpj = entry.getKey();
+            List<DespesaOperadora> despesasCnpj = entry.getValue();
+            
+            // Verifica se há divergência na razão social
+            Set<String> razoesDistintas = despesasCnpj.stream()
+                .map(DespesaOperadora::razaoSocial)
+                .collect(Collectors.toSet());
+            
+            if (razoesDistintas.size() > 1) {
+                // Marca todas como duplicadas
+                duplicatasEncontradas += despesasCnpj.size();
+                logger.warn("CNPJ {} possui {} razões sociais diferentes: {}", 
+                    cnpj, razoesDistintas.size(), razoesDistintas);
+                
+                for (DespesaOperadora despesa : despesasCnpj) {
+                    despesasValidadas.add(despesa.marcarComoCnpjDuplicado());
+                }
+            } else {
+                // Adiciona normalmente
+                despesasValidadas.addAll(despesasCnpj);
+            }
+        }
+        
+        logger.info("Validação concluída: {} registros marcados como duplicados", duplicatasEncontradas);
+        
+        return despesasValidadas;
+    }
+    
+    private boolean isArquivoProcessavel(Path arquivo) {
+        String nome = arquivo.getFileName().toString().toLowerCase();
+        return nome.endsWith(".csv") || nome.endsWith(".txt");
+    }
+    
+    private void compactarArquivo(Path arquivo, Path destino) throws IOException {
+        logger.info("Compactando arquivo: {} -> {}", arquivo, destino);
+        
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(destino))) {
+            ZipEntry entry = new ZipEntry(arquivo.getFileName().toString());
+            zos.putNextEntry(entry);
+            Files.copy(arquivo, zos);
+            zos.closeEntry();
+        }
+        
+        logger.info("Arquivo compactado com sucesso: {}", destino);
+    }
+}
