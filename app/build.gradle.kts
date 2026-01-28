@@ -47,7 +47,7 @@ java {
 
 application {
     // Define the main class for the application.
-    mainClass = "com.intuitivecare.teste.App"
+    mainClass = "com.intuitivecare.teste.parte1.Parte1Main"
 }
 
 tasks.named<Test>("test") {
