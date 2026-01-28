@@ -50,6 +50,14 @@ application {
     mainClass = "com.intuitivecare.teste.parte1.Parte1Main"
 }
 
+// Task customizada para executar Parte 2
+tasks.register<JavaExec>("runParte2") {
+    group = "application"
+    description = "Executa Parte 2: Transformação e Validação de Dados"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass = "com.intuitivecare.teste.parte2.Parte2Main"
+}
+
 tasks.named<Test>("test") {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
