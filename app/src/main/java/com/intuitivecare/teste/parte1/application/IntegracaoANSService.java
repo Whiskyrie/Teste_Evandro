@@ -1,23 +1,35 @@
 package com.intuitivecare.teste.parte1.application;
 
-import com.intuitivecare.teste.parte1.domain.*;
-import com.intuitivecare.teste.parte1.infrastructure.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.intuitivecare.teste.parte1.domain.DespesaOperadora;
+import com.intuitivecare.teste.parte1.domain.DespesasAgregadas;
+import com.intuitivecare.teste.parte1.domain.FlagValorSuspeito;
+import com.intuitivecare.teste.parte1.domain.OperadoraCadastro;
+import com.intuitivecare.teste.parte1.domain.StatusConsistencia;
+import com.intuitivecare.teste.parte1.domain.TrimestreANS;
+import com.intuitivecare.teste.parte1.infrastructure.ANSHttpClient;
+import com.intuitivecare.teste.parte1.infrastructure.CSVDespesasParser;
+import com.intuitivecare.teste.parte1.infrastructure.OperadoraCadastroParser;
+import com.intuitivecare.teste.parte1.infrastructure.ZipFileHandler;
 
 /**
  * Caso de uso: Integração com API da ANS - VERSÃO CORRIGIDA.
@@ -56,7 +68,7 @@ public class IntegracaoANSService {
             try {
                 List<DespesaOperadora> despesas = processarTrimestre(trimestre);
                 agregarDespesas(despesas, despesasPorOperadora);
-            } catch (Exception e) {
+            } catch (IOException | InterruptedException e) {
                 logger.error("Erro ao processar trimestre {}: {}", trimestre, e.getMessage(), e);
             }
         }
@@ -118,7 +130,7 @@ public class IntegracaoANSService {
                         despesas.addAll(despesasArquivo);
                     }
                 }
-            } catch (Exception e) {
+            } catch (IOException | InterruptedException e) {
                 logger.error("Erro ao processar arquivo ZIP {}: {}", urlZip, e.getMessage());
             }
         }
