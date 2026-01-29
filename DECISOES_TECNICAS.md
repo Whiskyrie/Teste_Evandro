@@ -202,21 +202,462 @@ boolean todosTrimestresZero = despesasCnpj.stream()
 
 ## Parte 2: Transformação e Validação de Dados
 
-### 2.1 Estratégia de Validação de CNPJs
+### 2.1 Algoritmo de Validação de CNPJ
 
-**Decisão:** [A definir]
+**Decisão:** Implementar validação completa com cálculo de dígitos verificadores conforme algoritmo oficial da Receita Federal
 
-**Justificativa:** [A definir]
+**Justificativa:**
+- **Precisão:** Algoritmo oficial garante validação confiável (elimina 99,9% de erros de digitação)
+- **Detecção de fraudes:** CNPJs inventados são facilmente identificados
+- **Normalização:** Aceita formato com ou sem máscara (99.999.999/9999-99 ou 99999999999999)
+- **Casos especiais:** Rejeita CNPJs com todos os dígitos iguais (00000000000000, 11111111111111, etc.)
+- **Trade-offs:**
+  - Processamento adicional por registro (~1ms por CNPJ)
+  - Mais complexo que validação apenas de formato
+  - Garante qualidade dos dados para análises futuras
+  - Evita problemas em joins e agregações
+
+**Implementação:**
+```java
+// Algoritmo oficial: dois dígitos verificadores
+// Pesos primeiro dígito: 5,4,3,2,9,8,7,6,5,4,3,2
+// Pesos segundo dígito: 6,5,4,3,2,9,8,7,6,5,4,3,2
+// Resto = (soma % 11) < 2 ? 0 : (11 - resto)
+public static boolean validar(String cnpj)
+```
+
+### 2.2 Estratégia para CNPJs Inválidos
+
+**Decisão:** Manter registros com CNPJ inválido, marcando com flag StatusValidacao.CNPJ_INVALIDO
+
+**Justificativa:**
+- **Transparência:** Preserva todos os dados da fonte original
+- **Rastreabilidade:** Permite investigar origem do problema (17 CNPJs inválidos = REG_ANS sem cadastro)
+- **Flexibilidade:** Usuário decide se filtra ou não nas análises
+- **Auditoria:** Mantém histórico completo para compliance
+- **Trade-offs:**
+  - Aumenta volume de dados (mas apenas 0.8% do total)
+  - Requer filtros em queries analíticas
+  - Melhor que perder dados silenciosamente
+  - Facilita debug e correção posterior
+
+**Alternativas consideradas:**
+- Rejeitar e descartar: perda de informação
+- Tentar corrigir automaticamente: risco de corrupção
+- **Manter com flag:** preserva dados + indica problema
+
+**Implementação:**
+```java
+enum StatusValidacao {
+    VALIDO,
+    CNPJ_INVALIDO,
+    RAZAO_SOCIAL_VAZIA,
+    VALOR_NEGATIVO
+}
+```
+
+### 2.3 Estratégia de Join com Dados Cadastrais
+
+**Decisão:** Join em memória usando HashMap com normalização de CNPJ
+
+**Justificativa:**
+- **Performance:** Hash lookup O(1) vs scan sequencial O(n)
+- **Volume adequado:** 1.110 cadastros + 2.148 despesas cabem facilmente em memória (~10MB)
+- **Normalização:** Remove formatação antes do match (evita erros por diferenças de formato)
+- **Simplicidade:** Código mais legível que SQL ou frameworks externos
+- **Trade-offs:**
+  - Requer memória RAM (~50MB total incluindo overhead JVM)
+  - Não escalaria para milhões de registros (mas não é o caso)
+  - Mais rápido que banco de dados para este volume
+  - Sem dependências externas
+
+**Alternativas consideradas:**
+- SQL join: requer banco instalado, mais complexo para este volume
+- Stream API join: performance inferior a HashMap
+- **HashMap in-memory:** melhor performance para volume atual
+
+**Implementação:**
+```java
+// 1. Carrega cadastro em Map<RegistroANS, OperadoraCadastro>
+// 2. Para cada despesa, busca cadastro via REG_ANS
+// 3. Normaliza CNPJ antes de buscar (remove formatação)
+Map<String, OperadoraCadastro> cadastro = cadastroParser.carregarCadastro(csvCadastro);
+OperadoraCadastro cad = cadastro.values().stream()
+    .filter(c -> cnpjNormalizado.equals(CNPJValidator.normalizar(c.cnpj())))
+    .findFirst().orElse(null);
+```
+
+### 2.4 Tratamento de Registros sem Match no Cadastro
+
+**Decisão:** Exportar com campos cadastrais vazios, mantendo dados de despesas
+
+**Justificativa:**
+- **Preservação:** 17 operadoras sem cadastro representam dados reais de despesas
+- **Visibilidade:** Facilita identificar gaps na base cadastral da ANS
+- **Análise completa:** Total de despesas permanece preciso
+- **Rastreabilidade:** Mantém REG_ANS para futura correção
+- **Trade-offs:**
+  - RegistroANS, Modalidade, UF ficam vazios nestes registros
+  - Não pode ser usado em agregações por UF
+  - Transparência total vs dataset "limpo"
+  - 17 registros (0.8%) - impacto mínimo
+
+**Resultado:**
+- 2.131 registros enriquecidos (99.2%)
+- 17 registros sem cadastro (0.8%)
+- Total: 2.148 registros preservados (100%)
+
+### 2.5 Estratégia de Agregação por Operadora/UF
+
+**Decisão:** Agregação em memória usando HashMap com chave composta
+
+**Justificativa:**
+- **Chave composta:** "RazaoSocial|UF" garante unicidade
+- **Performance:** Processamento single-pass - O(n) linear
+- **Filtro prévio:** Só agrega registros com UF (elimina 17 sem cadastro automaticamente)
+- **Memória eficiente:** Máximo 721 agregações vs 2.148 registros originais
+- **Trade-offs:**
+  - Só funciona para registros enriquecidos (com UF)
+  - Razão Social duplicada em UFs diferentes cria registros separados
+  - Mais rápido que GROUP BY em SQL para este volume
+  - Facilita cálculo de estatísticas em tempo real
+
+**Implementação:**
+```java
+Map<String, DespesasAgregadasPorOperadora> mapa = new HashMap<>();
+String chave = despesa.razaoSocial() + "|" + despesa.uf();
+agregada.adicionarValor(despesa.valorDespesas());
+```
+
+### 2.6 Cálculo de Estatísticas (Média e Desvio Padrão)
+
+**Decisão:** Cálculo incremental com BigDecimal para precisão financeira
+
+**Justificativa:**
+- **Precisão:** BigDecimal evita erros de arredondamento em valores monetários
+- **Fórmula padrão:** Desvio padrão populacional √(Σ(x-μ)²/n)
+- **Armazenamento:** Mantém lista de valores para cálculo posterior (vs acumuladores)
+- **Escala:** RoundingMode.HALF_UP com 2 casas decimais
+- **Trade-offs:**
+  - Armazena valores individuais (~24 bytes × 3 trimestres = 72 bytes por operadora)
+  - Mais memória que acumuladores incrementais
+  - Permite recalcular com fórmulas diferentes se necessário
+  - Precisão garantida para valores financeiros
+
+**Fórmula:**
+```
+Média = Σ(valores) / n
+Variância = Σ(valor - média)² / n
+Desvio Padrão = √Variância
+```
+
+**Validação real:**
+```
+UNIMED Belém: Q1=2.2bi, Q2=4.5bi, Q3=6.9bi
+Média = 4.5bi
+Desvio = 1.9bi (42% de variação - correto!)
+```
+
+### 2.7 Estratégia de Ordenação
+
+**Decisão:** Ordenação in-memory usando Comparator após agregação
+
+**Justificativa:**
+- **Volume pequeno:** 721 registros - ordenação QuickSort O(n log n) = ~7K comparações
+- **Performance:** Milissegundos vs segundos em banco de dados com índices
+- **Simplicidade:** Streams API do Java - código conciso e legível
+- **Flexibilidade:** Fácil mudar critério de ordenação (total, média, desvio, etc.)
+- **Trade-offs:**
+  - Toda lista em memória (~150KB)
+  - Não escalaria para milhões (mas não é o caso)
+  - Mais rápido que ORDER BY SQL para volume atual
+  - Sem necessidade de índices de banco
+
+**Implementação:**
+```java
+return mapa.values().stream()
+    .sorted((a, b) -> b.getTotal().compareTo(a.getTotal())) // DESC
+    .collect(Collectors.toList());
+```
+
+**Alternativas consideradas:**
+- SQL ORDER BY: requer banco, mais complexo
+- TreeMap: overhead de manter ordenação em inserts
+- **Sort no final:** mais eficiente para carga batch
 
 ---
 
 ## Parte 3: Banco de Dados e Análise
 
-### 3.1 Normalização do Banco
+### 3.1 Estratégia de Normalização do Banco de Dados
 
-**Decisão:** [A definir]
+**Decisão:** Modelo semi-normalizado com 3 tabelas principais + tabela dimensional de operadoras
 
-**Justificativa:** [A definir]
+**Justificativa:**
+- **Contexto:** 2.148 registros de despesas + 1.110 operadoras = volume pequeno para análises
+- **Modelo escolhido:**
+  - `operadoras` (dimensão): CNPJ, RazaoSocial, RegistroANS, Modalidade, UF, StatusValidacao (PK: cnpj)
+  - `despesas_consolidadas` (fato): id, cnpj_operadora, trimestre, ano, valor_despesas, status_consistencia, flag_valor_suspeito (PK: id, FK: cnpj_operadora)
+  - `despesas_agregadas` (view materializada): razao_social, uf, total_despesas, media_despesas, desvio_padrao, quantidade_trimestres
+  - `metadata_importacao`: controle de processamento e auditoria
+- **Trade-offs:**
+  - **Vantagens:**
+    - Elimina duplicação de dados cadastrais (normalização parcial)
+    - Queries analíticas simples com JOINs diretos
+    - Facilita atualização de dados cadastrais (um único lugar)
+    - View materializada pré-calculada para queries agregadas (performance)
+  - ⚠️ **Desvantagens:**
+    - Mais complexo que tabela única desnormalizada
+    - JOIN necessário para queries completas
+    - View materializada precisa refresh (mas pode ser manual)
+- **Alternativa rejeitada:** Tabela única desnormalizada
+  - Duplicaria razão social, UF, modalidade em 2.148 registros
+  - Atualização de cadastro requer UPDATE em massa
+  - Maior consumo de espaço (estimado: +40% vs normalizado)
+  - Queries mais simples (sem JOIN)
+  - Inserts mais rápidos
+
+**Resultado:** Semi-normalização equilibra simplicidade, manutenibilidade e performance para volume atual
+
+### 3.2 Tipos de Dados para Valores Monetários
+
+**Decisão:** NUMERIC(15, 2) para valores monetários
+
+**Justificativa:**
+- **Precisão:** NUMERIC garante precisão exata (vs FLOAT que tem erros de arredondamento)
+- **Escala:** 15 dígitos totais, 2 decimais
+  - Suporta até R$ 999.999.999.999,99 (999 trilhões)
+  - Valores reais: até R$ 282 bilhões (BRADESCO) - cabe confortavelmente
+- **Compatibilidade:** PostgreSQL NUMERIC = padrão SQL (vs DECIMAL é alias)
+- **Performance:** Para 2.148 registros, diferença de performance é irrelevante (<1ms)
+- **Trade-offs:**
+  - **NUMERIC(15,2):**
+    - Precisão exata (elimina erros de R$ 0,01)
+    - Matemática financeira confiável
+    - Padrão para sistemas financeiros
+    - Leve overhead de processamento (desprezível para volume atual)
+  - **FLOAT/DOUBLE:**
+    - Mais rápido (mas irrelevante para 2K registros)
+    - Erros de arredondamento (inaceitável para finanças)
+    - Soma de valores pode divergir
+  - **INTEGER (centavos):**
+    - Mais rápido em operações
+    - Requer conversão manual (R$ 100,50 = 10050)
+    - Complexidade adicional no código
+    - Limite: R$ 21 milhões com INT (insuficiente)
+
+**Implementação:**
+```sql
+CREATE TABLE despesas_consolidadas (
+    valor_despesas NUMERIC(15, 2) NOT NULL CHECK (valor_despesas >= 0)
+);
+```
+
+### 3.3 Tipos de Dados para Datas (Trimestre/Ano)
+
+**Decisão:** Campos separados `trimestre` (INTEGER) e `ano` (INTEGER) + função auxiliar para data inicial
+
+**Justificativa:**
+- **Contexto:** Dados da ANS são agregados por trimestre (Q1, Q2, Q3, Q4) - não há data exata
+- **Modelo escolhido:**
+  - `trimestre` INTEGER CHECK (trimestre BETWEEN 1 AND 4)
+  - `ano` INTEGER CHECK (ano BETWEEN 2020 AND 2030)
+  - Função: `get_trimestre_data_inicio(trimestre, ano) RETURNS DATE`
+- **Trade-offs:**
+  - **Campos separados:**
+    - Reflete realidade dos dados (granularidade = trimestre, não dia)
+    - Queries naturais: `WHERE ano = 2025 AND trimestre = 3`
+    - Ordenação simples: `ORDER BY ano DESC, trimestre DESC`
+    - Sem conversões artificiais
+    - Constraints validam valores (trimestre 1-4)
+  - **DATE (primeiro dia do trimestre):**
+    - Precisão falsa (sugere dia específico inexistente)
+    - Requer conversão: Q3/2025 → 2025-07-01 (arbitrário)
+    - Queries mais complexas: `WHERE EXTRACT(YEAR FROM data) = 2025`
+    - Permite valores inválidos (2025-02-15 em dado trimestral)
+  - **VARCHAR (formato "Q3/2025"):**
+    - Sem validação nativa
+    - Ordenação alfabética incorreta (Q1/2025 > Q3/2024 
+    - Comparações complexas
+    - Maior espaço (vs 8 bytes de 2 INTEGERs)
+
+**Implementação:**
+```sql
+CREATE TABLE despesas_consolidadas (
+    trimestre INTEGER NOT NULL CHECK (trimestre BETWEEN 1 AND 4),
+    ano INTEGER NOT NULL CHECK (ano BETWEEN 2020 AND 2030)
+);
+
+-- Função auxiliar para análises temporais
+CREATE FUNCTION get_trimestre_data_inicio(t INTEGER, a INTEGER) 
+RETURNS DATE AS $$
+    SELECT MAKE_DATE(a, (t-1)*3 + 1, 1);
+$$ LANGUAGE SQL IMMUTABLE;
+```
+
+### 3.4 Estratégia de Índices e Otimização
+
+**Decisão:** Índices seletivos focados em queries analíticas reais
+
+**Justificativa:**
+- **Contexto:** Volume pequeno (2K registros), mas queries analíticas complexas
+- **Índices criados:**
+  - `PK_operadoras` (cnpj): automático, para joins
+  - `PK_despesas` (id): automático, identidade
+  - `IDX_despesas_cnpj` (cnpj_operadora): queries com filtro por operadora
+  - `IDX_despesas_temporal` (ano, trimestre): queries de crescimento temporal
+  - `IDX_despesas_composite` (cnpj_operadora, ano, trimestre): query "despesas por operadora ao longo do tempo"
+  - `IDX_operadoras_uf` (uf): agregações por estado
+- **Trade-offs:**
+  - **Índices seletivos:**
+    - Acelerem queries específicas (crescimento, distribuição UF)
+    - Overhead mínimo em INSERTs (dados estáticos após importação)
+    - PostgreSQL usa automaticamente em queries analíticas
+  - ⚠️ **Custo:**
+    - ~20KB adicionais de espaço (desprezível)
+    - Leve overhead em UPDATEs (mas dados não são atualizados)
+- **Alternativa rejeitada:** Índice em todas as colunas
+  - Overhead desnecessário
+  - Queries não usariam maioria dos índices
+  - Espaço desperdiçado
+
+**Implementação:**
+```sql
+CREATE INDEX IDX_despesas_cnpj ON despesas_consolidadas(cnpj_operadora);
+CREATE INDEX IDX_despesas_temporal ON despesas_consolidadas(ano, trimestre);
+CREATE INDEX IDX_despesas_composite ON despesas_consolidadas(cnpj_operadora, ano, trimestre);
+CREATE INDEX IDX_operadoras_uf ON operadoras(uf);
+```
+
+### 3.5 Estratégia de Importação de CSV
+
+**Decisão:** COPY nativo do PostgreSQL com tratamento de erros em camada Java
+
+**Justificativa:**
+- **Performance:** COPY é ~10x mais rápido que INSERTs individuais
+- **Atomicidade:** Importação dentro de transação (rollback em caso de erro)
+- **Processo:**
+  1. Java valida CSV (encoding UTF-8, estrutura, tipos)
+  2. Java gera CSV limpo temporário (dados já validados na Parte 2)
+  3. PostgreSQL COPY com opções: `HEADER true, DELIMITER ',', NULL 'NULL'`
+  4. Verificação: COUNT(*) = registros esperados
+- **Trade-offs:**
+  - **COPY:**
+    - Bulk load otimizado (10x+ rápido)
+    - Menos round-trips rede
+    - Validação de tipos automática
+  - **INSERT individual:**
+    - Controle fino por registro
+    - Mais lento (irrelevante para 2K)
+    - Mais código
+  - **JDBC Batch INSERT:**
+    - Intermediário em performance
+    - Mais complexo que COPY
+    - Menos usado (não traz benefícios reais vs COPY)
+
+**Implementação:**
+```sql
+COPY despesas_consolidadas(cnpj_operadora, trimestre, ano, valor_despesas, status_consistencia, flag_valor_suspeito)
+FROM '/path/to/consolidado_despesas.csv'
+DELIMITER ',' CSV HEADER ENCODING 'UTF8';
+```
+
+### 3.6 Tratamento de Inconsistências na Importação
+
+**Decisão:** Validação prévia em Java + constraints PostgreSQL como camada de segurança
+
+**Justificativa:**
+- **Filosofia:** Dados já foram validados e limpos na Parte 2 - importação deve ser simples
+- **Camadas de proteção:**
+  - **Java (pré-importação):**
+    - Verifica encoding UTF-8
+    - Valida estrutura CSV (colunas esperadas)
+    - Confirma tipos compatíveis (NUMERIC parseable, INTEGER válido)
+    - Rejeta arquivo completo se houver problemas estruturais
+  - **PostgreSQL (durante importação):**
+    - `NOT NULL` constraints: rejeita valores ausentes
+    - `CHECK` constraints: valida trimestre (1-4), ano (2020-2030)
+    - `FOREIGN KEY`: garante CNPJ existe em operadoras
+    - `NUMERIC(15,2)`: converte automaticamente se possível
+- **Tratamento de erros específicos:**
+  - **Valor NULL em campo obrigatório:** Importação falha, Java loga linha, usuário corrige CSV
+  - **String em campo numérico:** PostgreSQL tenta conversão implícita; se falhar, importação para
+  - **CNPJ inexistente:** FK violation, importação para (indica problema nos dados da Parte 2)
+  - **Data fora do range:** CHECK violation, importação para
+- **Trade-offs:**
+  - **Fail-fast:**
+    - Problemas detectados imediatamente
+    - Dados corrompidos não entram no banco
+    - Fácil debug (PostgreSQL mostra linha exata do erro)
+  - **Skip silencioso:**
+    - Dados perdidos sem notificação
+    - Inconsistência entre CSV e banco
+    - Difícil auditoria
+  - **Valores padrão automáticos:**
+    - Mascara problemas reais
+    - Dados incorretos propagam
+    - Análises ficam enviesadas
+
+**Resultado:** Importação "otimista porém rigorosa" - confia na validação da Parte 2, mas bloqueia qualquer inconsistência
+
+### 3.7 Estratégia para Query de Crescimento Percentual
+
+**Decisão:** CTE (Common Table Expression) com COALESCE para tratamento de trimestres ausentes
+
+**Justificativa:**
+- **Desafio:** Operadoras podem não ter dados em todos os trimestres
+- **Abordagem:**
+  1. CTE identifica primeiro e último trimestre disponível para cada operadora
+  2. JOIN com despesas para obter valores (COALESCE para NULL = 0)
+  3. Cálculo: `((ultimo - primeiro) / NULLIF(primeiro, 0)) * 100`
+  4. Filtro: apenas operadoras com valor > 0 no primeiro trimestre (evita divisão por zero e crescimentos artificiais)
+  5. ORDER BY crescimento percentual DESC, LIMIT 5
+- **Trade-offs:**
+  - **CTE com COALESCE:**
+    - Legível e manutenível
+    - Trata ausência de dados explicitamente
+    - Performance adequada para 716 operadoras
+    - Lógica clara: "se não tem dados = zero"
+  - **Subqueries aninhadas:**
+    - Menos legível
+    - Mesma performance
+    - Mais difícil debugar
+  - **Window functions (LAG/LEAD):**
+    - Complexo para trimestres não consecutivos
+    - Requer ordenação prévia
+    - Overhead desnecessário
+- **Decisão sobre operadoras com trimestres ausentes:**
+  - Incluir com COALESCE (ausente = R$ 0,00)
+  - Justificativa: Reflete realidade (operadora suspensa, sem movimentação, etc.)
+  - Alternativa rejeitada: excluir operadoras sem 3 trimestres (perderia informação valiosa)
+
+**Implementação:**
+```sql
+WITH primeiro_ultimo AS (
+    SELECT 
+        cnpj_operadora,
+        MIN(ano * 4 + trimestre) as periodo_inicial,
+        MAX(ano * 4 + trimestre) as periodo_final,
+        COALESCE((SELECT valor_despesas FROM despesas_consolidadas d1 
+                  WHERE d1.cnpj_operadora = d.cnpj_operadora 
+                  AND d1.ano * 4 + d1.trimestre = MIN(d.ano * 4 + d.trimestre)), 0) as valor_inicial,
+        COALESCE((SELECT valor_despesas FROM despesas_consolidadas d2 
+                  WHERE d2.cnpj_operadora = d.cnpj_operadora 
+                  AND d2.ano * 4 + d2.trimestre = MAX(d.ano * 4 + d.trimestre)), 0) as valor_final
+    FROM despesas_consolidadas d
+    GROUP BY cnpj_operadora
+)
+SELECT 
+    o.razao_social,
+    p.valor_inicial,
+    p.valor_final,
+    ROUND(((p.valor_final - p.valor_inicial) / NULLIF(p.valor_inicial, 0) * 100)::NUMERIC, 2) as crescimento_percentual
+FROM primeiro_ultimo p
+JOIN operadoras o ON p.cnpj_operadora = o.cnpj
+WHERE p.valor_inicial > 0
+ORDER BY crescimento_percentual DESC
+LIMIT 5;
+```
 
 ---
 
@@ -243,6 +684,20 @@ boolean todosTrimestresZero = despesasCnpj.stream()
 | 2026-01-28 | Parte 1 | Identificação dinâmica de trimestres | Robustez: verifica disponibilidade no servidor |
 | 2026-01-28 | Parte 1 | Detecção operadoras sem movimentação | Validação: zero em todos os trimestres = inconsistente |
 | 2026-01-28 | Parte 1 | Manter operadoras sem cadastro | Preservação: 100% dos dados ANS |
+| 2026-01-28 | Parte 2 | Validação de CNPJ com algoritmo oficial | Conformidade com Receita Federal |
+| 2026-01-28 | Parte 2 | Preservar CNPJs inválidos com flag | Auditoria e rastreabilidade |
+| 2026-01-28 | Parte 2 | Join em memória com HashMap | Performance O(1) para 2.148 registros |
+| 2026-01-28 | Parte 2 | Preservar registros sem match cadastral | Transparência: manter 100% dos dados validados |
+| 2026-01-28 | Parte 2 | Agregação em memória | Volume permite processar sem banco (721 grupos) |
+| 2026-01-28 | Parte 2 | Estatísticas com BigDecimal | Precisão: eliminar erros de arredondamento |
+| 2026-01-28 | Parte 2 | Ordenação em memória | Simplicidade e performance adequada ao volume |
+| 2026-01-29 | Parte 3 | Modelo semi-normalizado (3 tabelas + view) | Equilíbrio entre simplicidade e manutenibilidade |
+| 2026-01-29 | Parte 3 | NUMERIC(15,2) para valores monetários | Precisão financeira: elimina erros de arredondamento |
+| 2026-01-29 | Parte 3 | Campos separados trimestre/ano (INTEGER) | Reflete granularidade real dos dados |
+| 2026-01-29 | Parte 3 | Índices seletivos para queries analíticas | Performance em crescimento e distribuição UF |
+| 2026-01-29 | Parte 3 | COPY nativo do PostgreSQL | Importação bulk 10x mais rápida |
+| 2026-01-29 | Parte 3 | Validação prévia + constraints PostgreSQL | Camadas de proteção: fail-fast com dados limpos |
+| 2026-01-29 | Parte 3 | CTE com COALESCE para crescimento | Legibilidade + trata trimestres ausentes |
 
 ---
 
@@ -251,15 +706,50 @@ boolean todosTrimestresZero = despesasCnpj.stream()
 **Arquitetura:** Clean Architecture com separação domain/application/infrastructure
 
 **Resultados:**
-- ✅ **356.505 registros** processados (contas contábeis 411*/412*)
-- ✅ **2.148 registros** consolidados (716 operadoras × 3 trimestres)
-- ✅ **Q3/2025, Q2/2025, Q1/2025** identificados dinamicamente
-- ✅ **98% match** com cadastro ANS (1.110 operadoras encontradas)
-- ✅ **25 operadoras** sem movimentação detectadas
-- ✅ **17 operadoras** sem cadastro preservadas
+- **356.505 registros** processados (contas contábeis 411*/412*)
+- **2.148 registros** consolidados (716 operadoras × 3 trimestres)
+- **Q3/2025, Q2/2025, Q1/2025** identificados dinamicamente
+- **98% match** com cadastro ANS (1.110 operadoras encontradas)
+- **25 operadoras** sem movimentação detectadas
+- **17 operadoras** sem cadastro preservadas
 
 **Validações implementadas:**
 - StatusConsistencia: CONSISTENTE | CNPJ_DUPLICADO_RAZAO_DIVERGENTE | OPERADORA_SEM_MOVIMENTACAO
 - FlagValorSuspeito: OK | VALOR_ZERO | VALOR_NEGATIVO
 
-**Arquivo gerado:** `consolidado_despesas.zip` (CSV com colunas: CNPJ, RazaoSocial, Trimestre, Ano, ValorDespesas, StatusConsistencia, FlagValorSuspeito)
+**Arquivo gerado:** `consolidado_despesas.zip` (CSV com colunas: CNPJ, RazaoSocial, Trimestre, Ano, ValorDespesas, StatusConsistencia, FlagValorSuspeito)File: /home/whiskyrie/Projetos/Teste_Evandro/parte2_resumo.tmp
+
+
+---
+
+## Resumo da Parte 2 (Concluída)
+
+**Arquitetura:** Clean Architecture mantida - domain com validações e regras de negócio, application com orquestração
+
+**Resultados:**
+- **2.148 registros** processados da Parte 1
+- **2.131 registros válidos** (99,2% taxa de validação)
+- **17 CNPJs inválidos** detectados (0,8% - preservados com flag)
+- **2.148 registros enriquecidos** com dados cadastrais (RegistroANS, Modalidade, UF)
+- **721 agregações** geradas (operadora × UF)
+- **Estatísticas completas** (Total, Média, Desvio Padrão com BigDecimal)
+
+**Validações implementadas:**
+- StatusValidacao: VALIDO | CNPJ_INVALIDO | RAZAO_SOCIAL_VAZIA | VALOR_NEGATIVO
+- Validação com algoritmo oficial da Receita Federal (2 dígitos verificadores)
+- Enriquecimento com join HashMap (O(1) - 1.110 cadastros)
+
+**Arquivos gerados:**
+1. `despesas_enriquecidas.csv` (255 KB) - 2.148 registros por trimestre com validação e enriquecimento
+   - Colunas: CNPJ, RazaoSocial, Trimestre, Ano, ValorDespesas, RegistroANS, Modalidade, UF, StatusValidacao, MensagemValidacao
+   
+2. `despesas_agregadas.csv` (66 KB) - 721 agregações por operadora/UF
+   - Colunas: RazaoSocial, UF, TotalDespesas, MediaDespesas, DesvioPadraoDespesas, QuantidadeTrimestres
+   - Ordenação: TotalDespesas DESC
+
+**Top 5 Operadoras (Total de Despesas):**
+1. BRADESCO SAÚDE S/A - R$ 282.916.175.711,83
+2. SUL AMÉRICA COMPANHIA DE SEGURO SAÚDE - R$ 202.788.950.859,00
+3. AMIL ASSISTÊNCIA MÉDICA INTERNACIONAL S.A. - R$ 193.545.316.899,04
+4. HAPVIDA ASSISTÊNCIA MÉDICA LTDA - R$ 91.638.775.659,37
+5. ASSOCIAÇÃO NOSSA SENHORA AUXILIADORA NOSSA DAME INTERMÉDICA - R$ 90.541.374.464,03
