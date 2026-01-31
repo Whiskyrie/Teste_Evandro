@@ -1,9 +1,10 @@
 <script setup>
 /**
- * Dashboard View - Spark Pixel Design
- * Estatisticas gerais das operadoras ANS
+ * Dashboard View - Intuitive Care Design
+ * Statistics overview for ANS health operators
+ * Using real API data only
  */
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useOperadorasStore } from '../stores/operadoras'
 import { Chart, registerables } from 'chart.js'
 
@@ -12,6 +13,55 @@ Chart.register(...registerables)
 const store = useOperadorasStore()
 const chartCanvas = ref(null)
 let chartInstance = null
+
+// Computed KPIs - REAL DATA ONLY from API
+const kpis = computed(() => {
+  if (!store.estatisticas) return []
+  
+  return [
+    {
+      label: 'Total de Operadoras',
+      value: formatNumber(store.estatisticas.total_operadoras),
+      period: 'Operadoras ativas',
+      icon: 'building'
+    },
+    {
+      label: 'Despesas Totais',
+      value: formatCompactBR(store.estatisticas.total_despesas),
+      period: 'Todos os períodos',
+      icon: 'dollar'
+    },
+    {
+      label: 'Média por Operadora',
+      value: formatCompactBR(store.estatisticas.media_despesas_por_operadora),
+      period: 'Média acumulada',
+      icon: 'calculator'
+    }
+  ]
+})
+
+// Top operadoras list - REAL DATA ONLY from API
+const topOperadoras = computed(() => {
+  if (!store.estatisticas?.top_5_operadoras) return []
+  return store.estatisticas.top_5_operadoras
+})
+
+// Regional distribution - REAL DATA from API
+const regionalDistribution = computed(() => {
+  if (!store.estatisticas?.despesas_por_uf) return []
+  
+  const total = store.estatisticas.despesas_por_uf.reduce((sum, item) => sum + Number(item.total_despesas), 0)
+  
+  return store.estatisticas.despesas_por_uf.slice(0, 5).map((item, index) => {
+    const percentage = ((Number(item.total_despesas) / total) * 100).toFixed(0)
+    const colors = ['#DC2626', '#F87171', '#FCA5A5', '#FECACA', '#FEE2E2']
+    return {
+      name: item.uf,
+      value: `${percentage}%`,
+      color: colors[index] || '#FEE2E2'
+    }
+  })
+})
 
 onMounted(async () => {
   await store.fetchEstatisticas()
@@ -40,7 +90,7 @@ function createChart() {
   }
 
   const ctx = chartCanvas.value.getContext('2d')
-  const data = store.estatisticas.despesas_por_uf
+  const data = store.estatisticas.despesas_por_uf.slice(0, 8)
 
   chartInstance = new Chart(ctx, {
     type: 'bar',
@@ -49,11 +99,11 @@ function createChart() {
       datasets: [{
         label: 'Total de Despesas',
         data: data.map(item => item.total_despesas),
-        backgroundColor: '#1A1A1A',
-        borderColor: '#1A1A1A',
+        backgroundColor: '#DC2626',
+        borderColor: '#DC2626',
         borderWidth: 0,
         borderRadius: 4,
-        barThickness: 24,
+        barThickness: 32,
       }]
     },
     options: {
@@ -64,13 +114,23 @@ function createChart() {
           display: false
         },
         tooltip: {
-          backgroundColor: '#FFFFFF',
-          titleColor: '#1A1A1A',
-          bodyColor: '#6B6B6B',
-          borderColor: '#E8E6E1',
-          borderWidth: 1,
+          backgroundColor: '#1A1A1A',
+          titleColor: '#FFFFFF',
+          bodyColor: '#FFFFFF',
+          borderColor: 'transparent',
+          borderWidth: 0,
           padding: 12,
+          cornerRadius: 8,
           displayColors: false,
+          titleFont: {
+            family: "'Inter', sans-serif",
+            size: 14,
+            weight: 600
+          },
+          bodyFont: {
+            family: "'Inter', sans-serif",
+            size: 14
+          },
           callbacks: {
             title: (items) => items[0].label,
             label: (item) => formatCurrency(item.raw)
@@ -82,8 +142,11 @@ function createChart() {
           grid: {
             display: false
           },
+          border: {
+            display: false
+          },
           ticks: {
-            color: '#6B6B6B',
+            color: '#9CA3AF',
             font: {
               family: "'Inter', sans-serif",
               size: 12
@@ -92,11 +155,14 @@ function createChart() {
         },
         y: {
           grid: {
-            color: '#E8E6E1',
+            color: '#F4F4F5',
             drawBorder: false
           },
+          border: {
+            display: false
+          },
           ticks: {
-            color: '#6B6B6B',
+            color: '#9CA3AF',
             font: {
               family: "'Inter', sans-serif",
               size: 11
@@ -125,6 +191,21 @@ function formatCompact(value) {
   }).format(value)
 }
 
+function formatCompactBR(value) {
+  if (!value) return 'R$ 0'
+  const numValue = Number(value)
+  if (numValue >= 1000000000000) {
+    return `R$ ${(numValue / 1000000000000).toFixed(2)} tri`
+  } else if (numValue >= 1000000000) {
+    return `R$ ${(numValue / 1000000000).toFixed(1)} bi`
+  } else if (numValue >= 1000000) {
+    return `R$ ${(numValue / 1000000).toFixed(1)} mi`
+  } else if (numValue >= 1000) {
+    return `R$ ${(numValue / 1000).toFixed(1)} mil`
+  }
+  return formatCurrency(numValue)
+}
+
 function formatNumber(value) {
   if (!value) return '0'
   return new Intl.NumberFormat('pt-BR').format(value)
@@ -136,7 +217,7 @@ function formatNumber(value) {
     <!-- Loading State -->
     <div v-if="store.loading" class="loading-container">
       <div class="spinner"></div>
-      <p class="text-secondary mt-md">Carregando estatisticas...</p>
+      <p class="text-secondary mt-4">Carregando estatísticas...</p>
     </div>
 
     <!-- Error State -->
@@ -147,139 +228,110 @@ function formatNumber(value) {
           <line x1="12" y1="8" x2="12" y2="12"/>
           <line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
-        <p class="mt-md">{{ store.error }}</p>
-        <button class="btn btn--primary mt-md" @click="store.fetchEstatisticas()">
+        <p class="mt-4">{{ store.error }}</p>
+        <button class="btn btn--primary mt-4" @click="store.fetchEstatisticas()">
           Tentar novamente
         </button>
       </div>
     </div>
 
     <!-- Dashboard Content -->
-    <template v-else-if="store.estatisticas">
-      <!-- Stats Cards -->
-      <div class="stats-grid">
-        <div class="card stat-card">
-          <span class="stat-card__label">Total de Operadoras</span>
-          <span class="stat-card__value">{{ formatNumber(store.estatisticas.total_operadoras) }}</span>
-          <div class="stat-card__trend stat-card__trend--positive">
-            Cadastradas na ANS
+    <template v-else>
+
+      <!-- KPI Cards Grid - 3 cards with real data -->
+      <div class="stats-grid stats-grid--3">
+        <div 
+          v-for="(kpi, index) in kpis" 
+          :key="index"
+          class="card stat-card"
+          :class="{ 'stat-card--accent': index === 0 }"
+        >
+          <span class="stat-card__label">{{ kpi.label }}</span>
+          <span class="stat-card__value">{{ kpi.value }}</span>
+          <span class="stat-card__period">{{ kpi.period }}</span>
+        </div>
+      </div>
+
+      <!-- Charts Section -->
+      <div class="charts-grid">
+        <!-- Main Chart Card -->
+        <div class="chart-card">
+          <div class="chart-card__header">
+            <div>
+              <h3 class="chart-card__title">Despesas por UF</h3>
+              <p class="chart-card__subtitle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="16" x2="12" y2="12"/>
+                  <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                Distribuição de despesas por estado (Top 8)
+              </p>
+            </div>
+          </div>
+          <div class="chart-card__content">
+            <div class="chart-card__chart chart-card__chart--full">
+              <canvas ref="chartCanvas"></canvas>
+            </div>
           </div>
         </div>
 
-        <div class="card stat-card">
-          <span class="stat-card__label">Total de Despesas</span>
-          <span class="stat-card__value">{{ formatCompact(store.estatisticas.total_despesas) }}</span>
-          <div class="stat-card__trend">
-            {{ formatCurrency(store.estatisticas.total_despesas) }}
+        <!-- Regional Distribution Card - with real API data -->
+        <div class="card" style="padding: 0;">
+          <div class="list-card__header" style="padding: var(--space-5);">
+            <h3 class="list-card__title">Distribuição por UF</h3>
           </div>
-        </div>
-
-        <div class="card stat-card">
-          <span class="stat-card__label">Media por Operadora</span>
-          <span class="stat-card__value">{{ formatCompact(store.estatisticas.media_despesas) }}</span>
-          <div class="stat-card__trend">
-            {{ formatCurrency(store.estatisticas.media_despesas) }}
-          </div>
-        </div>
-
-        <div class="card stat-card">
-          <span class="stat-card__label">Total de Trimestres</span>
-          <span class="stat-card__value">{{ store.estatisticas.total_trimestres }}</span>
-          <div class="stat-card__trend">
-            Periodos analisados
+          <div style="padding: var(--space-5); padding-top: 0;">
+            <!-- Region summary with real data -->
+            <div v-if="regionalDistribution.length > 0" class="region-stats">
+              <div class="region-stat" v-for="region in regionalDistribution" :key="region.name">
+                <div class="region-stat__bar" :style="{ background: region.color, width: region.value }"></div>
+                <div class="region-stat__info">
+                  <span class="region-stat__name">{{ region.name }}</span>
+                  <span class="region-stat__value">{{ region.value }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-state-small">
+              <p>Carregando dados...</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Top 5 Operadoras -->
-      <div class="section">
-        <div class="section__header">
-          <h2 class="section__title">Top 5 Operadoras</h2>
-          <span class="badge">Maiores Despesas</span>
-        </div>
-
-        <div class="data-table-card">
-          <div class="data-table-card__body">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th style="width: 60px;">Rank</th>
-                  <th>Razao Social</th>
-                  <th>CNPJ</th>
-                  <th style="text-align: right;">Total de Despesas</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(op, index) in store.estatisticas.top_5_operadoras" :key="op.cnpj">
-                  <td>
-                    <span class="rank-badge" :class="`rank-badge--${index + 1}`">
-                      {{ index + 1 }}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="font-medium">{{ op.razao_social }}</span>
-                  </td>
-                  <td>
-                    <span class="value-display">{{ op.cnpj }}</span>
-                  </td>
-                  <td style="text-align: right;">
-                    <span class="font-semibold">{{ formatCurrency(op.total_despesas) }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+      <!-- Bottom Cards Grid - Only Top 5 Maiores Despesas with real data -->
+      <div class="bottom-grid bottom-grid--single">
+        <!-- Maiores Despesas - REAL DATA -->
+        <div class="list-card">
+          <div class="list-card__header">
+            <h3 class="list-card__title">Top 5 Maiores Despesas</h3>
           </div>
-        </div>
-      </div>
-
-      <!-- Chart Section -->
-      <div class="section">
-        <div class="section__header">
-          <h2 class="section__title">Despesas por UF</h2>
-          <span class="badge">Top 10 Estados</span>
-        </div>
-
-        <div class="card">
-          <div class="chart-container">
-            <canvas ref="chartCanvas"></canvas>
+          <div v-if="topOperadoras.length > 0">
+            <div 
+              v-for="(op, index) in topOperadoras" 
+              :key="op.cnpj || index"
+              class="list-card__item"
+            >
+              <div class="list-card__item-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="2" width="16" height="20" rx="2"/>
+                  <path d="M9 22v-4h6v4"/>
+                  <path d="M8 6h.01"/>
+                  <path d="M16 6h.01"/>
+                  <path d="M12 6h.01"/>
+                  <path d="M12 10h.01"/>
+                  <path d="M12 14h.01"/>
+                </svg>
+              </div>
+              <div class="list-card__item-content">
+                <span class="list-card__item-title">{{ op.razao_social }}</span>
+                <span class="list-card__item-subtitle">{{ op.uf }}</span>
+              </div>
+              <span class="list-card__item-value">{{ formatCompactBR(op.total_despesas) }}</span>
+            </div>
           </div>
-        </div>
-      </div>
-
-      <!-- UF Table -->
-      <div class="section">
-        <div class="section__header">
-          <h2 class="section__title">Detalhamento por Estado</h2>
-        </div>
-
-        <div class="data-table-card">
-          <div class="data-table-card__body">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>UF</th>
-                  <th style="text-align: right;">Operadoras</th>
-                  <th style="text-align: right;">Total Despesas</th>
-                  <th style="text-align: right;">Media</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="uf in store.estatisticas.despesas_por_uf" :key="uf.uf">
-                  <td>
-                    <span class="font-semibold">{{ uf.uf }}</span>
-                  </td>
-                  <td style="text-align: right;">
-                    {{ formatNumber(uf.qtd_operadoras) }}
-                  </td>
-                  <td style="text-align: right;">
-                    <span class="font-medium">{{ formatCurrency(uf.total_despesas) }}</span>
-                  </td>
-                  <td style="text-align: right;">
-                    <span class="text-secondary">{{ formatCurrency(uf.media_por_operadora) }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div v-else class="empty-state-small">
+            <p>Nenhum dado disponível</p>
           </div>
         </div>
       </div>
@@ -302,12 +354,12 @@ function formatNumber(value) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3xl);
+  padding: var(--space-16);
 }
 
 .error-card {
   max-width: 400px;
-  margin: var(--space-3xl) auto;
+  margin: var(--space-16) auto;
 }
 
 .error-content {
@@ -315,49 +367,77 @@ function formatNumber(value) {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  color: var(--color-text-error);
+  color: var(--color-error);
 }
 
-.rank-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-}
-
-.rank-badge--1 {
-  background: linear-gradient(135deg, #FFD700, #FFA500);
-  color: #000;
-}
-
-.rank-badge--2 {
-  background: linear-gradient(135deg, #C0C0C0, #A0A0A0);
-  color: #000;
-}
-
-.rank-badge--3 {
-  background: linear-gradient(135deg, #CD7F32, #A0522D);
-  color: #FFF;
-}
-
-.rank-badge--4,
-.rank-badge--5 {
-  background: var(--color-bg-main);
-  color: var(--color-text-secondary);
-}
-
-.chart-container {
-  height: 350px;
-  padding: var(--space-md);
+/* Stats Grid - 3 columns */
+.stats-grid--3 {
+  grid-template-columns: repeat(3, 1fr) !important;
 }
 
 @media (max-width: 768px) {
-  .chart-container {
-    height: 280px;
+  .stats-grid--3 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Chart full width */
+.chart-card__chart--full {
+  width: 100%;
+  flex: 1;
+}
+
+/* Bottom grid single card */
+.bottom-grid--single {
+  grid-template-columns: 1fr !important;
+}
+
+/* Region Stats */
+.region-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.region-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.region-stat__bar {
+  height: 8px;
+  border-radius: var(--radius-full);
+  transition: width 0.5s ease;
+}
+
+.region-stat__info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.region-stat__name {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.region-stat__value {
+  font-size: var(--text-body-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+/* Empty state small */
+.empty-state-small {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 768px) {
+  .chart-card__content {
+    flex-direction: column;
   }
 }
 </style>

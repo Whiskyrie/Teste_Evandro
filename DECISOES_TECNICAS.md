@@ -665,9 +665,9 @@ LIMIT 5;
 
 ### 4.1 Framework Backend
 
-**Decisão:** [A definir]
+**Decisão:** FastAPI com psycopg2 (sem ORM)
 
-**Justificativa:** [A definir]
+**Justificativa:** Detalhada na seção 4.2.1 abaixo.
 
 ---
 
@@ -1205,61 +1205,3 @@ async function fetchOperadoraDetails(cnpj) {
 - Base URL configurável via `.env`
 - Interceptor para logging
 - Headers padrão (Content-Type: application/json)
-
-**Arquitetura:**
-```
-User → Vue Router → View Component → Pinia Store → API Service → Backend FastAPI
-                                          ↓
-                                    Local State (ref, computed)
-```
-
-**Performance:**
-- Initial load: ~500ms (download + render)
-- Navigation: <100ms (client-side routing)
-- API requests: 50-200ms (local backend)
-- Re-renders: <16ms (60fps)
-
-**Acessibilidade:**
-- Semantic HTML (header, nav, main, footer)
-- Alt text para status badges
-- Keyboard navigation (Tab, Enter)
-- Focus states visíveis
-
-**Responsividade:**
-- Desktop: Grid de 2-4 colunas
-- Tablet: Grid de 2 colunas
-- Mobile: Single column
-- Breakpoint: 768px
-
----
-
-## Resumo Final - Parte 4 Completa
-
-**Backend FastAPI:** ✅ Completo
-- 4 endpoints REST funcionando
-- Validação com Pydantic
-- Connection pooling
-- Paginação e filtros
-- Postman collection com testes
-
-**Frontend Vue.js:** ✅ Completo
-- 3 views implementadas (Home, Details, Dashboard)
-- Pinia stores para estado
-- Vue Router para navegação
-- Chart.js para gráficos
-- Design responsivo e acessível
-- Tratamento de erros
-- Loading states
-
-**Integração:** ✅ Testada
-- Frontend consome API com sucesso
-- CORS configurado
-- Dados fluem corretamente
-- Gráficos renderizam dados reais
-
-**Documentação:** ✅ Completa
-- Trade-offs documentados (4.3.1-4.3.4)
-- README.md do frontend
-- Comentários no código
-
-

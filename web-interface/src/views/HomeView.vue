@@ -1,7 +1,7 @@
 <script setup>
 /**
- * Operadoras View - Spark Pixel Design
- * Lista de operadoras com filtros e paginacao
+ * Operadoras View - Intuitive Care Design
+ * List of health operators with filters and pagination
  */
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -88,7 +88,7 @@ function formatCNPJ(cnpj) {
             v-model="localSearch"
             type="text"
             class="input"
-            placeholder="Buscar por razao social ou CNPJ..."
+            placeholder="Buscar por razão social ou CNPJ..."
             @keyup.enter="applyFilters"
           />
         </div>
@@ -122,18 +122,18 @@ function formatCNPJ(cnpj) {
     <div v-if="hasActiveFilters" class="active-filters">
       <span class="badge" v-if="store.searchQuery">
         Busca: "{{ store.searchQuery }}"
-        <button class="badge-close" @click="localSearch = ''; applyFilters()">x</button>
+        <button class="badge-close" @click="localSearch = ''; applyFilters()">×</button>
       </span>
       <span class="badge" v-if="store.selectedUF">
         UF: {{ store.selectedUF }}
-        <button class="badge-close" @click="localUF = ''; applyFilters()">x</button>
+        <button class="badge-close" @click="localUF = ''; applyFilters()">×</button>
       </span>
     </div>
 
     <!-- Loading State -->
     <div v-if="store.loading" class="loading-container">
       <div class="spinner"></div>
-      <p class="text-secondary mt-md">Carregando operadoras...</p>
+      <p class="text-secondary mt-4">Carregando operadoras...</p>
     </div>
 
     <!-- Error State -->
@@ -144,8 +144,8 @@ function formatCNPJ(cnpj) {
           <line x1="12" y1="8" x2="12" y2="12"/>
           <line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
-        <p class="mt-md">{{ store.error }}</p>
-        <button class="btn btn--primary mt-md" @click="store.fetchOperadoras()">
+        <p class="mt-4">{{ store.error }}</p>
+        <button class="btn btn--primary mt-4" @click="store.fetchOperadoras()">
           Tentar novamente
         </button>
       </div>
@@ -163,7 +163,7 @@ function formatCNPJ(cnpj) {
           <thead>
             <tr>
               <th>CNPJ</th>
-              <th>Razao Social</th>
+              <th>Razão Social</th>
               <th>Registro ANS</th>
               <th>Modalidade</th>
               <th>UF</th>
@@ -181,7 +181,7 @@ function formatCNPJ(cnpj) {
               </td>
               <td>{{ op.registro_ans || '-' }}</td>
               <td>
-                <span class="text-secondary text-sm">{{ op.modalidade || '-' }}</span>
+                <span class="text-secondary text-body-sm">{{ op.modalidade || '-' }}</span>
               </td>
               <td>
                 <span class="font-semibold">{{ op.uf || '-' }}</span>
@@ -211,7 +211,7 @@ function formatCNPJ(cnpj) {
 
       <!-- Pagination -->
       <div class="data-table-card__footer">
-        <span class="text-secondary text-sm">
+        <span class="text-secondary text-body-sm">
           Mostrando {{ store.operadoras.length }} de {{ store.pagination.total }}
         </span>
 
@@ -259,7 +259,7 @@ function formatCNPJ(cnpj) {
       <p class="empty-state__description">
         Tente ajustar os filtros ou limpar a busca para ver mais resultados.
       </p>
-      <button class="btn btn--primary mt-md" @click="clearFilters">
+      <button class="btn btn--primary mt-4" @click="clearFilters">
         Limpar filtros
       </button>
     </div>
@@ -281,12 +281,12 @@ function formatCNPJ(cnpj) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3xl);
+  padding: var(--space-16);
 }
 
 .error-card {
   max-width: 400px;
-  margin: var(--space-3xl) auto;
+  margin: var(--space-16) auto;
 }
 
 .error-content {
@@ -294,22 +294,23 @@ function formatCNPJ(cnpj) {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  color: var(--color-text-error);
+  color: var(--color-error);
 }
 
 .active-filters {
   display: flex;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
   flex-wrap: wrap;
 }
 
 .badge-close {
   background: transparent;
   border: none;
-  margin-left: var(--space-xs);
+  margin-left: var(--space-1);
   cursor: pointer;
-  font-size: var(--text-xs);
+  font-size: 16px;
+  line-height: 1;
   opacity: 0.7;
 }
 
@@ -318,7 +319,7 @@ function formatCNPJ(cnpj) {
 }
 
 .table tbody tr:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-neutral-50);
 }
 
 @media (max-width: 768px) {

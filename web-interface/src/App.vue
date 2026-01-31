@@ -1,4 +1,8 @@
 <script setup>
+/**
+ * App Layout - Intuitive Care Dashboard
+ * ANS Health Operators Analytics
+ */
 import { ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
@@ -7,7 +11,7 @@ const sidebarOpen = ref(false)
 
 const menuItems = [
   { icon: 'dashboard', label: 'Dashboard', path: '/' },
-  { icon: 'list', label: 'Operadoras', path: '/operadoras' }
+  { icon: 'building', label: 'Operadoras', path: '/operadoras' }
 ]
 
 const toggleSidebar = () => {
@@ -19,65 +23,64 @@ const toggleSidebar = () => {
   <div id="app">
     <!-- Sidebar -->
     <aside class="sidebar" :class="{ 'sidebar--open': sidebarOpen }">
-      <div class="sidebar__header">
-        <div class="sidebar__logo">
-          <div class="sidebar__logo-icon">IC</div>
-          <span>Intuitive Care</span>
-        </div>
-      </div>
-
       <nav class="sidebar__nav">
         <div class="sidebar__section">
-          <div class="sidebar__section-title">Menu Principal</div>
           <RouterLink
             v-for="item in menuItems"
             :key="item.path"
-            :to="item.path"
+            :to="item.disabled ? '#' : item.path"
             class="sidebar__item"
-            :class="{ 'sidebar__item--active': route.path === item.path }"
+            :class="{ 
+              'sidebar__item--active': route.path === item.path,
+              'sidebar__item--disabled': item.disabled
+            }"
             @click="sidebarOpen = false"
           >
-            <svg class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <template v-if="item.icon === 'dashboard'">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </template>
-              <template v-else-if="item.icon === 'list'">
-                <line x1="8" y1="6" x2="21" y2="6" />
-                <line x1="8" y1="12" x2="21" y2="12" />
-                <line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" />
-                <line x1="3" y1="12" x2="3.01" y2="12" />
-                <line x1="3" y1="18" x2="3.01" y2="18" />
-              </template>
+            <!-- Dashboard Icon -->
+            <svg v-if="item.icon === 'dashboard'" class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="9" rx="1" />
+              <rect x="14" y="3" width="7" height="5" rx="1" />
+              <rect x="14" y="12" width="7" height="9" rx="1" />
+              <rect x="3" y="16" width="7" height="5" rx="1" />
             </svg>
-            {{ item.label }}
+            <!-- Building Icon -->
+            <svg v-else-if="item.icon === 'building'" class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="2" width="16" height="20" rx="2"/>
+              <path d="M9 22v-4h6v4"/>
+              <path d="M8 6h.01"/>
+              <path d="M16 6h.01"/>
+              <path d="M12 6h.01"/>
+              <path d="M12 10h.01"/>
+              <path d="M12 14h.01"/>
+              <path d="M16 10h.01"/>
+              <path d="M16 14h.01"/>
+              <path d="M8 10h.01"/>
+              <path d="M8 14h.01"/>
+            </svg>
+            <!-- Chart Icon -->
+            <svg v-else-if="item.icon === 'chart'" class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3v18h18"/>
+              <path d="M18 17V9"/>
+              <path d="M13 17V5"/>
+              <path d="M8 17v-3"/>
+            </svg>
+            <!-- File Icon -->
+            <svg v-else-if="item.icon === 'file'" class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <line x1="10" y1="9" x2="8" y2="9"/>
+            </svg>
+            <!-- Map Icon -->
+            <svg v-else-if="item.icon === 'map'" class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            <span>{{ item.label }}</span>
           </RouterLink>
         </div>
-
-        <div class="sidebar__section">
-          <div class="sidebar__section-title">Dados</div>
-          <div class="sidebar__item" style="cursor: default; opacity: 0.7;">
-            <svg class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            Fonte: ANS
-          </div>
-        </div>
       </nav>
-
-      <div class="sidebar__footer">
-        <div class="sidebar__item" style="cursor: default;">
-          <svg class="sidebar__item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-          <span class="text-sm text-secondary">v1.0.0</span>
-        </div>
-      </div>
     </aside>
 
     <!-- Main Content -->
@@ -92,9 +95,6 @@ const toggleSidebar = () => {
           </svg>
         </button>
         <h1 class="header__title">{{ route.meta.title || 'Dashboard' }}</h1>
-        <div class="header__actions">
-          <span class="badge">ANS Data</span>
-        </div>
       </header>
 
       <!-- Content -->
@@ -123,6 +123,11 @@ const toggleSidebar = () => {
 
 .sidebar-overlay {
   display: none;
+}
+
+.sidebar__item--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
