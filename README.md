@@ -1,6 +1,6 @@
 # Teste Técnico - Intuitive Care
 
-Sistema completo de análise de despesas de operadoras de planos de saúde, desenvolvido em **Java 25 + Gradle** como parte do processo seletivo para estagiário de desenvolvimento.
+Sistema completo de análise de despesas de operadoras de planos de saúde, desenvolvido em **Java 25 + Gradle** (backend ETL), **FastAPI + Python** (API REST), e **Vue.js 3** (interface web) como parte do processo seletivo para estagiário de desenvolvimento.
 
 ## Índice
 
@@ -12,6 +12,7 @@ Sistema completo de análise de despesas de operadoras de planos de saúde, dese
   - [Parte 1: Integração com API e Consolidação](#parte-1-integração-com-api-e-consolidação)
   - [Parte 2: Validação CNPJ e Enriquecimento](#parte-2-validação-cnpj-e-enriquecimento)
   - [Parte 3: Banco de Dados e Queries Analíticas](#parte-3-banco-de-dados-e-queries-analíticas)
+  - [Parte 4: API REST e Interface Web](#parte-4-api-rest-e-interface-web)
 - [Decisões Técnicas](#decisões-técnicas)
 - [Resultados e Validações](#resultados-e-validações)
 
@@ -19,14 +20,16 @@ Sistema completo de análise de despesas de operadoras de planos de saúde, dese
 
 ## Visão Geral
 
-Este projeto implementa um pipeline completo de ETL (Extract, Transform, Load) para análise de despesas de operadoras de planos de saúde:
+Este projeto implementa um sistema completo de análise de despesas de operadoras de planos de saúde:
 
-1. **Extração**: Integração com API da ANS para coletar dados de despesas
-2. **Transformação**: Validação de CNPJ, enriquecimento com dados cadastrais, agregações
-3. **Carregamento**: Persistência em PostgreSQL com queries analíticas
+1. **Extração (Parte 1)**: Integração com API da ANS para coletar dados de despesas
+2. **Transformação (Parte 2)**: Validação de CNPJ, enriquecimento com dados cadastrais, agregações
+3. **Carregamento (Parte 3)**: Persistência em PostgreSQL com queries analíticas
+4. **Exposição (Parte 4)**: API REST (FastAPI) + Interface Web (Vue.js)
 
 ### Principais Funcionalidades
 
+**ETL (Partes 1-3):**
 - Coleta automática de dados via API REST (ANS)
 - Validação de CNPJ com dígitos verificadores
 - Enriquecimento com dados cadastrais de operadoras
@@ -34,8 +37,17 @@ Este projeto implementa um pipeline completo de ETL (Extract, Transform, Load) p
 - Banco de dados PostgreSQL com schema otimizado
 - Queries analíticas: crescimento, distribuição geográfica, benchmarking
 
+**API + Web (Parte 4):**
+- API REST com 4 endpoints (lista, detalhes, despesas, estatísticas)
+- Paginação e filtros (busca, UF)
+- Interface web responsiva com Vue.js
+- Dashboard com gráficos interativos (Chart.js)
+- Navegação client-side (Vue Router)
+- State management (Pinia)
+
 ### Stack Tecnológica
 
+**Backend ETL (Java):**
 - **Java 25** (JDK 25 com Virtual Threads e Records)
 - **Gradle 9.3.0** (Kotlin DSL)
 - **Apache HttpClient 5.4.1** (REST API integration)
@@ -43,8 +55,25 @@ Este projeto implementa um pipeline completo de ETL (Extract, Transform, Load) p
 - **Apache Commons Compress 1.27.1** (ZIP handling)
 - **Jackson 2.18.2** (JSON processing)
 - **SLF4J + Logback** (Structured logging)
-- **PostgreSQL 18.1** (Database)
 - **JUnit Jupiter** (Testing)
+
+**Database:**
+- **PostgreSQL 18.1** (Database com views materializadas)
+
+**API Backend (Python):**
+- **Python 3.14.2**
+- **FastAPI 0.115.0** (API framework)
+- **Uvicorn 0.32.0** (ASGI server)
+- **psycopg2-binary 2.9.10** (PostgreSQL driver)
+- **Pydantic 2.12.5** (Validation)
+
+**Frontend (JavaScript):**
+- **Vue 3** (Composition API)
+- **Vite 7.2.5 + Rolldown** (Build tool experimental)
+- **Vue Router 4** (Navigation)
+- **Pinia** (State management)
+- **Chart.js** (Data visualization)
+- **Axios** (HTTP client)
 
 ---
 
@@ -52,38 +81,23 @@ Este projeto implementa um pipeline completo de ETL (Extract, Transform, Load) p
 
 ```
 Teste_Evandro/
-├── app/
+├── app/                                      # Backend ETL (Java)
 │   ├── src/
 │   │   ├── main/java/com/intuitivecare/teste/
-│   │   │   ├── parte1/
-│   │   │   │   ├── Parte1Main.java           # Entry point Parte 1
-│   │   │   │   ├── domain/                   # Domain models
-│   │   │   │   │   ├── DespesaOperadora.java
-│   │   │   │   │   ├── OperadoraCadastro.java
-│   │   │   │   │   ├── TrimestreANS.java
-│   │   │   │   │   └── FlagValorSuspeito.java
-│   │   │   │   ├── application/              # Business logic
-│   │   │   │   │   └── IntegracaoANSService.java
-│   │   │   │   └── infrastructure/           # HTTP, CSV, ZIP handlers
-│   │   │   │       ├── ANSHttpClient.java
-│   │   │   │       ├── CSVDespesasParser.java
-│   │   │   │       ├── ZipFileHandler.java
-│   │   │   │       └── OperadoraCadastroParser.java
-│   │   │   └── parte2/
-│   │   │       ├── Parte2Main.java           # Entry point Parte 2
-│   │   │       └── domain/                   # CNPJ validation, enrichment
-│   │   │           ├── CNPJValidator.java
-│   │   │           ├── DespesaEnriquecida.java
-│   │   │           ├── DespesasAgregadasPorOperadora.java
-│   │   │           └── StatusValidacao.java
-│   │   └── test/java/                        # Unit tests
-│   │       └── com/intuitivecare/teste/parte2/
-│   │           └── domain/CNPJValidatorTest.java
+│   │   │   ├── parte1/                      # Integração com API ANS
+│   │   │   │   ├── Parte1Main.java
+│   │   │   │   ├── domain/
+│   │   │   │   ├── application/
+│   │   │   │   └── infrastructure/
+│   │   │   └── parte2/                      # Validação e enriquecimento
+│   │   │       ├── Parte2Main.java
+│   │   │       └── domain/
+│   │   └── test/java/                       # Testes unitários
 │   ├── dados/
-│   │   ├── parte1/                           # Dados consolidados da API
-│   │   └── parte2/                           # Dados enriquecidos e agregados
-│   └── build.gradle.kts                      # Gradle build configuration
-├── database/
+│   │   ├── parte1/                          # CSV consolidados
+│   │   └── parte2/                          # CSV enriquecidos
+│   └── build.gradle.kts
+├── database/                                 # PostgreSQL (Parte 3)
 │   ├── queries/
 │   │   ├── 01_crescimento_percentual.sql
 │   │   ├── 02_distribuicao_uf.sql
@@ -91,13 +105,38 @@ Teste_Evandro/
 │   ├── schema.sql
 │   ├── import.sql
 │   └── setup.sh
-├── gradle/                                   # Gradle wrapper
-│   └── libs.versions.toml                    # Dependency versions
-├── gradlew                                   # Gradle wrapper script (Unix)
-├── gradlew.bat                               # Gradle wrapper script (Windows)
-├── settings.gradle.kts                       # Gradle settings
-├── gradle.properties                         # Gradle configuration
-├── DECISOES_TECNICAS.md                      # Trade-offs e escolhas arquiteturais
+├── api-backend/                              # API REST (Parte 4 - FastAPI)
+│   ├── app/
+│   │   ├── main.py                          # Entry point
+│   │   ├── database.py                      # Connection pooling
+│   │   ├── models/
+│   │   │   └── schemas.py                   # Pydantic models
+│   │   └── routes/
+│   │       ├── operadoras.py                # Endpoints operadoras
+│   │       └── estatisticas.py              # Endpoint estatísticas
+│   ├── requirements.txt
+│   └── README.md
+├── web-interface/                            # Frontend (Parte 4 - Vue.js)
+│   ├── src/
+│   │   ├── views/                           # Páginas
+│   │   │   ├── HomeView.vue                 # Lista operadoras
+│   │   │   ├── OperadoraDetailView.vue      # Detalhes
+│   │   │   └── DashboardView.vue            # Dashboard
+│   │   ├── stores/                          # Pinia stores
+│   │   │   ├── operadoras.js
+│   │   │   └── estatisticas.js
+│   │   ├── services/
+│   │   │   └── api.js                       # Axios client
+│   │   ├── router/
+│   │   │   └── index.js                     # Vue Router
+│   │   ├── App.vue                          # Layout principal
+│   │   ├── main.js                          # Entry point
+│   │   └── style.css                        # Estilos globais
+│   ├── package.json
+│   ├── vite.config.js
+│   └── README.md
+├── Postman_Collection.json                   # Collection para testes da API
+├── DECISOES_TECNICAS.md                      # Trade-offs documentados
 └── README.md
 ```
 
@@ -107,8 +146,19 @@ Teste_Evandro/
 
 ### Software Necessário
 
+**Partes 1-3 (ETL + Database):**
 - **JDK 25** (ou superior)
 - **PostgreSQL 14+** (testado com PostgreSQL 18.1)
+
+**Parte 4 - Backend (API):**
+- **Python 3.14+** (ou 3.12+)
+- **pip** (gerenciador de pacotes Python)
+
+**Parte 4 - Frontend (Web):**
+- **Node.js 18+** (ou superior)
+- **npm** (vem com Node.js)
+
+**Geral:**
 - **Git** (para clonar o repositório)
 
 > **Nota**: Gradle não precisa estar instalado! O projeto usa Gradle Wrapper (`gradlew`).
@@ -122,6 +172,17 @@ java -version
 
 # PostgreSQL
 psql --version
+
+# Python
+python3 --version
+# Deve mostrar: Python 3.12+ ou 3.14+
+
+# Node.js
+node --version
+# Deve mostrar: v18+ ou superior
+
+# npm
+npm --version
 
 # Git
 git --version
@@ -597,6 +658,139 @@ QUERY 3: Operadoras Acima da Média
 
                     Operadora                     | UF | Trimestres Acima | Média (R$)        | Diferença (%) 
 --------------------------------------------------+----+------------------+-------------------+---------------
+ BRADESCO SAÚDE S.A.                              | RJ |                3 | 94,312,119,292.52 | 1026.78
+ SUL AMERICA COMPANHIA DE SEGURO SAÚDE            | RJ |                3 | 67,614,221,032.34 | 707.56
+ ...
+```
+
+---
+
+### Parte 4: API REST e Interface Web
+
+**Objetivo:** Expor os dados através de uma API REST e criar interface web para visualização.
+
+#### 4.1 Backend - API REST (FastAPI)
+
+**Executar Backend:**
+
+```bash
+# Navegar para diretório da API
+cd api-backend
+
+# Criar ambiente virtual (recomendado)
+python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
+# ou
+venv\Scripts\activate  # Windows
+
+# Instalar dependências
+pip install -r requirements.txt
+
+# Executar servidor
+python -m uvicorn app.main:app --reload
+
+# Servidor estará em: http://localhost:8000
+# Documentação automática: http://localhost:8000/docs
+```
+
+**Endpoints Disponíveis:**
+
+1. `GET /api/operadoras` - Lista paginada de operadoras
+   - Query params: `page`, `limit`, `search`, `uf`
+   - Retorna: `{ data: [...], total, page, limit, total_pages, has_next, has_previous }`
+
+2. `GET /api/operadoras/{cnpj}` - Detalhes da operadora
+   - Retorna: Informações cadastrais + estatísticas
+
+3. `GET /api/operadoras/{cnpj}/despesas` - Histórico de despesas
+   - Retorna: Lista de despesas ordenada por ano/trimestre DESC
+
+4. `GET /api/estatisticas` - Estatísticas agregadas
+   - Retorna: Total operadoras, despesas, médias, top 5, despesas por UF
+
+**Testar com Postman:**
+
+```bash
+# Importar collection
+# Arquivo: Postman_Collection.json
+# Contém 8 requests com testes automatizados
+```
+
+**Variáveis de Ambiente:**
+
+```bash
+# Criar arquivo .env (opcional)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=teste_intuitive_care
+DB_USER=postgres
+DB_PASSWORD=postgres
+```
+
+#### 4.2 Frontend - Interface Web (Vue.js)
+
+**Executar Frontend:**
+
+```bash
+# Navegar para diretório do frontend
+cd web-interface
+
+# Instalar dependências
+npm install
+
+# Executar servidor de desenvolvimento
+npm run dev
+
+# Aplicação estará em: http://localhost:5173
+```
+
+**Funcionalidades:**
+
+1. **Lista de Operadoras (`/`)**:
+   - Tabela paginada (20 registros por página)
+   - Busca por Razão Social ou CNPJ
+   - Filtro por UF
+   - Badges de status de validação
+   - Botão "Detalhes" para cada operadora
+
+2. **Detalhes da Operadora (`/operadora/:cnpj`)**:
+   - Informações cadastrais
+   - Cards com estatísticas (Total Despesas, Quantidade Trimestres)
+   - Histórico de despesas agrupado por ano
+   - Tabelas de despesas por trimestre
+
+3. **Dashboard (`/dashboard`)**:
+   - 4 cards de métricas gerais
+   - Top 5 operadoras (badges ouro/prata/bronze)
+   - Gráfico Chart.js dual-axis (despesas + quantidade por UF)
+   - Tabela detalhada por UF
+
+**Build para Produção:**
+
+```bash
+# Gerar build otimizado
+npm run build
+
+# Preview do build
+npm run preview
+
+# Arquivos gerados em: dist/
+```
+
+**Arquitetura Frontend:**
+
+```
+Vue Router → View Component → Pinia Store → API Service (Axios) → FastAPI Backend
+                                    ↓
+                              Local State (ref, computed)
+```
+
+**Tecnologias:**
+- **Vue 3**: Composition API com `<script setup>`
+- **Vite 7 + Rolldown**: Build ultrarrápido (experimental 2026)
+- **Pinia**: State management oficial Vue 3
+- **Chart.js**: Gráficos interativos
+- **Axios**: HTTP client com interceptors
  BRADESCO SAÚDE S.A.                              | RJ |                3 | 94,312,119,292.52 | 5435.09
  SUL AMERICA COMPANHIA DE SEGURO SAÚDE            | RJ |                3 | 67,614,221,032.34 | 3868.21
  ...
