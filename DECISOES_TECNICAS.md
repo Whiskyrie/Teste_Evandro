@@ -753,3 +753,176 @@ LIMIT 5;
 3. AMIL ASSISTÊNCIA MÉDICA INTERNACIONAL S.A. - R$ 193.545.316.899,04
 4. HAPVIDA ASSISTÊNCIA MÉDICA LTDA - R$ 91.638.775.659,37
 5. ASSOCIAÇÃO NOSSA SENHORA AUXILIADORA NOSSA DAME INTERMÉDICA - R$ 90.541.374.464,03
+
+---
+
+## Parte 4: API e Interface Web (Backend)
+
+### 4.2.1 Escolha do Framework: FastAPI vs Flask
+
+**Decisão:** FastAPI com psycopg2 (sem ORM)
+
+**Justificativa:**
+- **Performance:** FastAPI é 3-5x mais rápido que Flask (baseado em Starlette + Pydantic)
+- **Validação automática:** Type hints nativos validam requests/responses automaticamente
+- **Documentação automática:** OpenAPI/Swagger gerado automaticamente em /docs e /redoc
+- **Async nativo:** Escalabilidade futura com suporte a operações assíncronas
+- **Developer Experience:** Autocompletar e type checking melhoram produtividade
+- **Comunidade ativa:** Framework moderno (2024+) com adoção crescente
+
+**Por que sem ORM (psycopg2 puro):**
+- **Compatibilidade Python 3.14:** SQLAlchemy 2.0 ainda tem problemas com versões muito recentes
+- **Schema já existe:** Database foi criado na Parte 3, não precisa de migrations
+- **Queries simples:** SELECT, JOINs básicos e agregações (não justifica ORM)
+- **Performance:** SQL direto é mais rápido (sem overhead de ORM)
+- **Menos dependências:** Apenas FastAPI + psycopg2 (vs FastAPI + SQLAlchemy + Alembic)
+- **Transparência:** SQL queries visíveis e fáceis de otimizar
+
+**Trade-offs:**
+- Menos type-safety (sem models ORM)
+- Mais código SQL manual
+- Melhor performance e simplicidade para este MVP
+
+### 4.2.2 Estratégia de Paginação: Offset-based
+
+**Decisão:** Offset-based pagination (page + limit)
+
+**Justificativa:**
+- **Simplicidade:** Fácil de implementar e entender (`LIMIT x OFFSET y`)
+- **Navegação direta:** Usuário pode pular para qualquer página
+- **Volume de dados:** 732 operadoras é relativamente pequeno (offset funciona bem)
+- **Dados estáticos:** Operadoras são atualizadas raramente (sem problemas de consistency)
+- **UX familiar:** Usuários conhecem navegação por páginas numeradas
+
+**Alternativas consideradas:**
+- **Cursor-based:** Melhor para streams infinitos, mas UX menos intuitiva
+- **Keyset pagination:** Mais rápido em grandes volumes, mas não permite navegação direta
+
+**Implementação:**
+```python
+offset = (page - 1) * limit
+SELECT * FROM operadoras ORDER BY razao_social LIMIT {limit} OFFSET {offset}
+```
+
+**Trade-offs:**
+- Performance degrada em offsets muito altos (não é problema com 732 registros)
+- Pode pular/duplicar registros se dados mudarem durante navegação (raro neste caso)
+- Simplicidade supera desvantagens para este volume de dados
+
+### 4.2.3 Cache vs Queries Diretas: Cálculo on-demand
+
+**Decisão:** Calcular estatísticas em tempo real (sem cache)
+
+**Justificativa:**
+- **Volume pequeno:** 732 operadoras + 2.148 despesas = queries rápidas (<500ms)
+- **Dados semi-estáticos:** Operadoras atualizadas apenas via imports manuais (não tempo real)
+- **Simplicidade:** Sem necessidade de Redis/Memcached ou lógica de invalidação
+- **Consistência:** Sempre retorna dados atuais do banco
+- **Infraestrutura:** Sem dependências adicionais
+
+**Alternativas consideradas:**
+- **Cache em memória (Redis):** Overkill para este volume, adiciona complexidade
+- **View materializada:** Já existe no banco (Parte 3), mas queries diretas são suficientes
+- **Pre-cálculo em tabela:** Requer triggers ou jobs, aumenta complexidade
+
+**Otimizações aplicadas:**
+- Índices no banco (criados na Parte 3)
+- Connection pooling (psycopg2.pool.SimpleConnectionPool)
+- Agregações no PostgreSQL (não em Python)
+
+**Trade-offs:**
+- Queries executadas toda vez (sem reuso)
+- Performance aceitável para MVP (<500ms)
+- Facilita manutenção (sem lógica de cache)
+
+### 4.2.4 Estrutura de Resposta: Dados + Metadados
+
+**Decisão:** Response com dados + metadados de paginação
+
+**Formato:**
+```json
+{
+  "data": [...],
+  "total": 732,
+  "page": 1,
+  "limit": 20,
+  "total_pages": 37,
+  "has_next": true,
+  "has_previous": false
+}
+```
+
+**Justificativa:**
+- **Frontend precisa de contexto:** Total de páginas, navegação (próximo/anterior)
+- **UX melhor:** Mostrar "Página 1 de 37" e desabilitar botões corretamente
+- **Padrão de mercado:** Maioria das APIs REST usa este formato
+- **Flexibilidade:** Frontend pode calcular navegação sem fazer requests extras
+
+**Alternativas consideradas:**
+- **Apenas array:** Simples, mas frontend não sabe quantas páginas existem
+- **Headers HTTP (Link, X-Total-Count):** Menos intuitivo, requer parsing de headers
+
+**Trade-offs:**
+- Response ligeiramente maior (metadados extras)
+- Facilita muito o desenvolvimento do frontend
+- Vale a pena pela melhor UX
+
+### 4.2.5 Connection Pooling
+
+**Decisão:** SimpleConnectionPool com 1-10 conexões
+
+**Justificativa:**
+- **Reuso de conexões:** Evita overhead de criar/destruir conexões TCP
+- **Concorrência:** Suporta 10 requests simultâneos
+- **Simplicidade:** Pool nativo do psycopg2, sem dependências extras
+
+**Configuração:**
+```python
+SimpleConnectionPool(minconn=1, maxconn=10, cursor_factory=RealDictCursor)
+```
+
+**Trade-offs:**
+- Pool pequeno (suficiente para MVP com tráfego baixo)
+- Escalável aumentando maxconn se necessário
+
+---
+
+## Resumo da Parte 4 - Backend (Concluído)
+
+**Stack:** FastAPI 0.115+ + psycopg2-binary 2.9+ + Pydantic 2.0+
+
+**Endpoints implementados:**
+1. `GET /api/operadoras` - Lista paginada com busca (razão social/CNPJ) e filtro por UF
+2. `GET /api/operadoras/{cnpj}` - Detalhes + estatísticas (total despesas, qtd trimestres)
+3. `GET /api/operadoras/{cnpj}/despesas` - Histórico completo ordenado por ano/trimestre
+4. `GET /api/estatisticas` - Top 5 operadoras, distribuição por UF, totais
+
+**Features:**
+- Paginação offset-based (page + limit, max 100 por página)
+- Busca case-insensitive por razão social ou CNPJ
+- Filtro por UF
+- Validação automática com Pydantic
+- Tratamento de erros (404 para CNPJs inexistentes)
+- CORS habilitado para desenvolvimento
+- Health check em `/`
+- Documentação automática em `/docs` e `/redoc`
+
+**Coleção Postman:**
+- 8 requests bem documentados
+- Testes automatizados com assertions
+- Validações de status codes, estrutura de dados, valores
+- CNPJs de teste: 92693118000160, 15011651000154
+
+**Performance:**
+- Response time < 500ms para estatísticas
+- Connection pooling com 10 conexões
+- SQL otimizado com índices (Parte 3)
+
+**Trade-offs documentados:**
+- FastAPI vs Flask (escolhido FastAPI por performance e DX)
+- psycopg2 vs SQLAlchemy (escolhido SQL puro por compatibilidade Python 3.14)
+- Offset-based vs cursor-based (escolhido offset por simplicidade)
+- Cache vs on-demand (escolhido on-demand por volume pequeno)
+- Response structure (escolhido data + metadados para melhor UX)
+
+**Pendente:** Frontend Vue.js (Parte 4.3)
