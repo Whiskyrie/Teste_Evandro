@@ -1,0 +1,477 @@
+{
+    "info": {
+        "name": "Intuitive Care - API Operadoras",
+        "description": "Coleção de testes da API REST para consulta de operadoras de planos de saúde e suas despesas consolidadas.\n\n## Base URL\nhttp://localhost:8000\n\n## Endpoints\n\n1. **GET /api/operadoras** - Lista operadoras com paginação e filtros\n2. **GET /api/operadoras/{cnpj}** - Detalhes de uma operadora específica\n3. **GET /api/operadoras/{cnpj}/despesas** - Histórico de despesas\n4. **GET /api/estatisticas** - Estatísticas agregadas do sistema\n\n## Como usar\n\n1. Inicie o servidor FastAPI: `python run.py`\n2. Execute os requests na ordem\n3. Verifique os responses e status codes\n\n## Dados de teste\n\n- CNPJ válido: 92693118000160 (Bradesco Saúde S.A.)\n- CNPJ alternativo: 15011651000154 (Bradesco Saúde - Operadora)\n- UF para filtro: SP, RJ, MG\n- Busca: \"BRADESCO\", \"UNIMED\", \"ADVANCE\"",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "intuitive-care-api-v1",
+        "version": "1.0.0"
+    },
+    "item": [
+        {
+            "name": "Operadoras",
+            "item": [
+                {
+                    "name": "1. Listar Operadoras (Paginação Básica)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/operadoras?page=1&limit=20",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "operadoras"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1",
+                                    "description": "Número da página (mínimo: 1)"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20",
+                                    "description": "Itens por página (1-100, default: 20)"
+                                }
+                            ]
+                        },
+                        "description": "**Teste:** Lista as primeiras 20 operadoras com paginação.\n\n**Validações esperadas:**\n- Status: 200 OK\n- Response contém: data, total, page, limit, total_pages, has_next, has_previous\n- Array `data` com até 20 operadoras\n- Campo `total` > 0 (deve ter 732 operadoras)\n- `has_next` = true (se existir próxima página)\n- `has_previous` = false (primeira página)"
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Response contém estrutura de paginação\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData).to.have.property('data');",
+                                    "    pm.expect(jsonData).to.have.property('total');",
+                                    "    pm.expect(jsonData).to.have.property('page');",
+                                    "    pm.expect(jsonData).to.have.property('limit');",
+                                    "    pm.expect(jsonData).to.have.property('total_pages');",
+                                    "    pm.expect(jsonData).to.have.property('has_next');",
+                                    "    pm.expect(jsonData).to.have.property('has_previous');",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Total de operadoras é 732\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.total).to.equal(732);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Array data contém operadoras\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.data).to.be.an('array');",
+                                    "    pm.expect(jsonData.data.length).to.be.at.most(20);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Primeira operadora tem campos obrigatórios\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    const operadora = jsonData.data[0];",
+                                    "    pm.expect(operadora).to.have.property('cnpj');",
+                                    "    pm.expect(operadora).to.have.property('razao_social');",
+                                    "    pm.expect(operadora.cnpj).to.be.a('string');",
+                                    "    pm.expect(operadora.razao_social).to.be.a('string');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "2. Listar Operadoras (Com Busca)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/operadoras?page=1&limit=10&search=BRADESCO",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "operadoras"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "search",
+                                    "value": "BRADESCO",
+                                    "description": "Busca por razão social ou CNPJ (case-insensitive)"
+                                }
+                            ]
+                        },
+                        "description": "**Teste:** Busca operadoras com \"BRADESCO\" no nome.\n\n**Validações esperadas:**\n- Status: 200 OK\n- Todas as operadoras retornadas devem conter \"BRADESCO\" na razão social\n- Total filtrado < 732 (total geral)\n- Busca case-insensitive (BRADESCO = bradesco = Bradesco)"
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Todas operadoras contêm BRADESCO no nome\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    jsonData.data.forEach(function(operadora) {",
+                                    "        pm.expect(operadora.razao_social.toUpperCase()).to.include('BRADESCO');",
+                                    "    });",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Total filtrado é menor que total geral\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.total).to.be.below(732);",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "3. Listar Operadoras (Filtro por UF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/operadoras?page=1&limit=10&uf=SP",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "operadoras"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "uf",
+                                    "value": "SP",
+                                    "description": "Filtro por UF (2 caracteres)"
+                                }
+                            ]
+                        },
+                        "description": "**Teste:** Filtra operadoras do estado de São Paulo.\n\n**Validações esperadas:**\n- Status: 200 OK\n- Todas as operadoras retornadas devem ter uf = \"SP\"\n- Total filtrado reflete apenas operadoras de SP"
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Todas operadoras são de SP\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    jsonData.data.forEach(function(operadora) {",
+                                    "        pm.expect(operadora.uf).to.equal('SP');",
+                                    "    });",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "4. Detalhes da Operadora",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/operadoras/92693118000160",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "operadoras",
+                                "92693118000160"
+                            ]
+                        },
+                        "description": "**Teste:** Busca detalhes de uma operadora específica (Bradesco Saúde S.A.).\n\n**CNPJ:** 92693118000160\n\n**Validações esperadas:**\n- Status: 200 OK\n- Campos básicos: cnpj, razao_social, registro_ans, modalidade, uf, status_validacao\n- Estatísticas: total_despesas (Decimal), qtd_trimestres (integer)\n- total_despesas > 0 (operadora tem despesas registradas)\n- qtd_trimestres >= 0"
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Response contém todos os campos\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData).to.have.property('cnpj');",
+                                    "    pm.expect(jsonData).to.have.property('razao_social');",
+                                    "    pm.expect(jsonData).to.have.property('total_despesas');",
+                                    "    pm.expect(jsonData).to.have.property('qtd_trimestres');",
+                                    "});",
+                                    "",
+                                    "pm.test(\"CNPJ corresponde ao solicitado\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.cnpj).to.equal('92693118000160');",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Possui despesas registradas\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(parseFloat(jsonData.total_despesas)).to.be.above(0);",
+                                    "    pm.expect(jsonData.qtd_trimestres).to.be.at.least(0);",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "5. Detalhes da Operadora (CNPJ Inexistente)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/operadoras/00000000000000",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "operadoras",
+                                "00000000000000"
+                            ]
+                        },
+                        "description": "**Teste:** Tenta buscar operadora com CNPJ inexistente.\n\n**Validações esperadas:**\n- Status: 404 Not Found\n- Response contém mensagem de erro: \"Operadora não encontrada\""
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 404\", function () {",
+                                    "    pm.response.to.have.status(404);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Mensagem de erro está presente\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData).to.have.property('detail');",
+                                    "    pm.expect(jsonData.detail).to.include('não encontrada');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "6. Histórico de Despesas",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/operadoras/92693118000160/despesas",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "operadoras",
+                                "92693118000160",
+                                "despesas"
+                            ]
+                        },
+                        "description": "**Teste:** Busca histórico de despesas de uma operadora.\n\n**CNPJ:** 92693118000160 (Bradesco Saúde S.A.)\n\n**Validações esperadas:**\n- Status: 200 OK\n- Response é array de despesas\n- Cada despesa contém: trimestre, ano, valor_despesas, cnpj_operadora, razao_social, uf\n- Despesas ordenadas por ano e trimestre (mais recente primeiro)\n- Todos os registros têm o mesmo cnpj_operadora"
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Response é array\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData).to.be.an('array');",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Despesas têm campos obrigatórios\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    if (jsonData.length > 0) {",
+                                    "        const despesa = jsonData[0];",
+                                    "        pm.expect(despesa).to.have.property('trimestre');",
+                                    "        pm.expect(despesa).to.have.property('ano');",
+                                    "        pm.expect(despesa).to.have.property('valor_despesas');",
+                                    "        pm.expect(despesa).to.have.property('cnpj_operadora');",
+                                    "        pm.expect(despesa).to.have.property('razao_social');",
+                                    "    }",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Todos os registros são da mesma operadora\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    jsonData.forEach(function(despesa) {",
+                                    "        pm.expect(despesa.cnpj_operadora).to.equal('92693118000160');",
+                                    "    });",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "description": "Endpoints relacionados a operadoras de planos de saúde."
+        },
+        {
+            "name": "Estatísticas",
+            "item": [
+                {
+                    "name": "7. Estatísticas Gerais",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/estatisticas",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "estatisticas"
+                            ]
+                        },
+                        "description": "**Teste:** Busca estatísticas agregadas do sistema.\n\n**Validações esperadas:**\n- Status: 200 OK\n- Campos obrigatórios:\n  - total_operadoras (integer) = 732\n  - total_despesas (Decimal) > 0\n  - media_despesas_por_operadora (Decimal) > 0\n  - top_5_operadoras (array com 5 elementos)\n  - despesas_por_uf (array com até 10 elementos)\n\n**Top 5 Operadoras:**\n- Cada item contém: cnpj, razao_social, uf, total_despesas\n- Ordenadas por total_despesas (decrescente)\n\n**Despesas por UF:**\n- Cada item contém: uf, total_despesas, qtd_operadoras, media_por_operadora\n- Ordenadas por total_despesas (decrescente)\n- Máximo 10 UFs"
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Response contém todos os campos\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData).to.have.property('total_operadoras');",
+                                    "    pm.expect(jsonData).to.have.property('total_despesas');",
+                                    "    pm.expect(jsonData).to.have.property('media_despesas_por_operadora');",
+                                    "    pm.expect(jsonData).to.have.property('top_5_operadoras');",
+                                    "    pm.expect(jsonData).to.have.property('despesas_por_uf');",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Total de operadoras é 732\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.total_operadoras).to.equal(732);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Top 5 operadoras está completo\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.top_5_operadoras).to.be.an('array');",
+                                    "    pm.expect(jsonData.top_5_operadoras.length).to.equal(5);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Despesas por UF (máximo 10)\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.despesas_por_uf).to.be.an('array');",
+                                    "    pm.expect(jsonData.despesas_por_uf.length).to.be.at.most(10);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"Top 5 está ordenado corretamente\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    const top5 = jsonData.top_5_operadoras;",
+                                    "    for (let i = 0; i < top5.length - 1; i++) {",
+                                    "        const atual = parseFloat(top5[i].total_despesas);",
+                                    "        const proximo = parseFloat(top5[i + 1].total_despesas);",
+                                    "        pm.expect(atual).to.be.at.least(proximo);",
+                                    "    }",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "description": "Endpoints de estatísticas agregadas e análises."
+        },
+        {
+            "name": "Health Check",
+            "item": [
+                {
+                    "name": "8. Health Check",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                ""
+                            ]
+                        },
+                        "description": "**Teste:** Verifica se a API está online.\n\n**Validações esperadas:**\n- Status: 200 OK\n- Response contém: status, service, version\n- status = \"ok\""
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code é 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test(\"API está online\", function () {",
+                                    "    const jsonData = pm.response.json();",
+                                    "    pm.expect(jsonData.status).to.equal('ok');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "description": "Endpoint de verificação de saúde da API."
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000",
+            "type": "string"
+        }
+    ]
+}
